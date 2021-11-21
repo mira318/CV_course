@@ -1,11 +1,9 @@
 #include <iostream>
-#include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui.hpp>
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/opencv.hpp"
 #include <ctime>
-#include <algorithm> // will not need this
 
 static const int MAX_UINT8_T = 255;
 
@@ -136,7 +134,7 @@ class Huang_hist {
   }
 };
 
-cv::Mat huang_filter(cv::Mat& original_image, const int filter_r) {
+cv::Mat huang_filter(cv::Mat& original_image, const int filter_r, long double* timer_place = nullptr) {
   /*
    * Функция, реализующая медианную фильтрацию алгоритмом Huang. Сам поиск медианы и хранение гистограммы осуществляет
    * hist из класса Huang_hist
@@ -158,6 +156,7 @@ cv::Mat huang_filter(cv::Mat& original_image, const int filter_r) {
   uint8_t* row_input = new uint8_t[2 * filter_r + 1]; // чтобы передавать список добавляемых элементов
   uint8_t* row_output = new uint8_t[2 * filter_r + 1]; // чтобы передавать список удаляемых элементов
 
+  time_t start = clock();
   for (int i = 0; i < new_n - (2 * filter_r); ++i) {
     for (int j = 0; j < new_m - (2 * filter_r); ++j) {
       if (j == 0) {
@@ -178,11 +177,17 @@ cv::Mat huang_filter(cv::Mat& original_image, const int filter_r) {
       }
     }
   }
+  time_t finish = clock();
+
+  if(timer_place != nullptr){
+    *timer_place = static_cast<long double>(finish - start) / CLOCKS_PER_SEC;
+  }
+
+  delete[] bordered_pixels;
+  bordered_pixels = nullptr;
   delete[] first_time_input;
   delete[] row_input;
   delete[] row_output;
-  delete[] bordered_pixels;
-  bordered_pixels = nullptr;
   return cv::Mat(n, m, CV_8UC1, new_pixels);
 }
 
@@ -335,7 +340,7 @@ public:
   }
 };
 
-cv::Mat perrault_filter(cv::Mat& original_image, const int filter_r) {
+cv::Mat perrault_filter(cv::Mat& original_image, const int filter_r, long double* timer_place = nullptr) {
   /*
    * Функция, которая реализует медианную фильтрацию за O(1) на пиксель. (Perrault - фамилия первого из авторов статьи)
    * Основная работа: подсчёт гистограмм по столбцам, их сложение и нахождение всех медиан - происходит внутри
@@ -352,11 +357,17 @@ cv::Mat perrault_filter(cv::Mat& original_image, const int filter_r) {
   int new_m = m + 2 * filter_r;
   uint8_t* bordered_pixels = add_borders(original_pixels, n, m, filter_r);
 
+  time_t start = clock();
   Perrault_hist phist = Perrault_hist(bordered_pixels, new_n, new_m, filter_r);
   for (int i = 0; i < new_n - (2 * filter_r); ++i) {
     for (int j = 0; j < new_m - (2 * filter_r); ++j) {
       new_pixels[i * m + j] = phist.next_median();
     }
+  }
+  time_t finish = clock();
+
+  if(timer_place != nullptr){
+    *timer_place = static_cast<long double>(finish - start) / CLOCKS_PER_SEC;
   }
 
   delete[] bordered_pixels;
@@ -378,7 +389,7 @@ uint8_t find_med_by_sort(uint8_t* window, const int filter_r) {
   return window[window_size / 2];
 }
 
-cv::Mat naive_filter(const cv::Mat& original_image, const int filter_r){
+cv::Mat naive_filter(const cv::Mat& original_image, const int filter_r, long double* timer_place = nullptr){
   /*
    * Функция, которая реализует медианную фильтрацию с помощью простой сортировки. Сама медиана считается в функции
    * find_med_by_sort.
@@ -394,6 +405,7 @@ cv::Mat naive_filter(const cv::Mat& original_image, const int filter_r){
   int new_m = m + 2 * filter_r;
   uint8_t* bordered_pixels = add_borders(original_pixels, n, m, filter_r);
 
+  time_t start = clock();
   for(int i = 0; i < new_n - (2 * filter_r); ++i){
     for(int j = 0; j < new_m - (2 * filter_r); ++j){
 
@@ -407,32 +419,179 @@ cv::Mat naive_filter(const cv::Mat& original_image, const int filter_r){
       new_pixels[i * m + j] = find_med_by_sort(filter_window, filter_r);
     }
   }
+  time_t finish = clock();
+  if(timer_place != nullptr){
+    *timer_place = static_cast<long double>(finish - start) / CLOCKS_PER_SEC;
+  }
   // Выделяли память, когда добавляли границы.
   delete[] bordered_pixels;
   bordered_pixels = nullptr;
   return cv::Mat(n, m, CV_8UC1, new_pixels);
 }
 
+void check_similarity(cv::Mat& original_image, const int filter_r, bool save = false, std::string opencv_file = "\0",
+                      std::string naive_file = "\0", std::string huang_file = "\0", std::string perrault_file = "\0"){
+  /*
+   * Функция для проверки правильности алгоритмов. Запускает все 4 (вместе с cv::medianBlur) алгоритма для фиксированных
+   * картинки и радиуса и сравнивает результаты.
+   * */
+  cv::Size sz = original_image.size();
+  int n = sz.height;
+  int m = sz.width;
+
+  cv::Mat opencv_filtered = cv::Mat(sz.height, sz.width, CV_8UC1);
+  // В официальной документации написано, что medianBlur принимает ksize. Это размер квадратной матрицы с фильтром.
+  // Т. е., если я хочу работать с радиусом, надо пересчитать.
+  cv::medianBlur(original_image, opencv_filtered, 2 * filter_r + 1);
+  cv::Mat naive_filtered = naive_filter(original_image, filter_r);
+  cv::Mat huang_filtered = huang_filter(original_image, filter_r);
+  cv::Mat perrault_filtered = perrault_filter(original_image, filter_r);
+
+  uint8_t* naive_pixel = reinterpret_cast<uint8_t*>(naive_filtered.data);
+  uint8_t* huang_pixel = reinterpret_cast<uint8_t*>(huang_filtered.data);
+  uint8_t* perrault_pixel = reinterpret_cast<uint8_t*>(perrault_filtered.data);
+  uint8_t* opencv_pixel = reinterpret_cast<uint8_t*>(opencv_filtered.data);
+
+  // Возможно, стоило использовать assert, но мне хотелось видеть, где именно ошибка.
+  for(int i = 0; i < n; ++i){
+    for(int j = 0; j < m; ++j){
+      if(huang_pixel[i * m + j] != naive_pixel[i * m + j]){
+        std::cout << "ALERT in Huang with naive i = " << i << ", j = " << j << std::endl;
+        std::cout << "huang value = " << static_cast<int>(huang_pixel[i * m + j]) << std::endl;
+        std::cout << "naive value = " << static_cast<int>(naive_pixel[i * m + j]) << std::endl;
+      }
+      if(perrault_pixel[i * m + j] != naive_pixel[i * m + j]){
+        std::cout << "ALERT in perrault with naive i = " << i << ", j = " << j << std::endl;
+        std::cout << "perrault value = " << static_cast<int>(huang_pixel[i * m + j]) << std::endl;
+        std::cout << "naive value = " << static_cast<int>(naive_pixel[i * m + j]) << std::endl;
+      }
+      if(naive_pixel[i * m + j] != opencv_pixel[i * m + j]){
+        std::cout << "ALERT in naive with opencv, i = " << i << ", j = " << j << std::endl;
+        std::cout << "naive value = " << static_cast<int>(naive_pixel[i * m + j]) << std::endl;
+        std::cout << "opencv value = " << static_cast<int>(opencv_pixel[i * m + j]) << std::endl;
+      }
+    }
+  }
+
+  if(save){
+    try{
+      cv::imwrite(opencv_file, opencv_filtered);
+    }
+    catch (cv::Exception ex){
+      std::cout << "Exception while writing first image (opencv) to the file: " << ex.what() << std::endl;
+    }
+
+    try{
+      cv::imwrite(naive_file, naive_filtered);
+    }
+    catch (cv::Exception ex){
+      std::cout << "Exception while writing second image (naive) to the file: " << ex.what() << std::endl;
+    }
+
+    try{
+      cv::imwrite(huang_file, huang_filtered);
+    }
+    catch (cv::Exception ex){
+      std::cout << "Exception while writing third image (Huang) to the file: " << ex.what() << std::endl;
+    }
+
+    try{
+      cv::imwrite(perrault_file, perrault_filtered);
+    }
+    catch (cv::Exception ex){
+      std::cout << "Exception while writing forth image (Perrault) to the file: " << ex.what() << std::endl;
+    }
+  }
+}
+
+void time_register(cv::Mat& test_image, char way){
+  long double timer;
+
+  switch(way){
+    case 'c': {
+      std::cout << "Times for opencv medianBlur:" << std::endl;
+      cv::Size sz = test_image.size();
+      int n = sz.height;
+      int m = sz.width;
+      cv::Mat opencv_filtered = cv::Mat(n, m, CV_8UC1);
+      for (int r = 1; r < 100; ++r) {
+        time_t start = clock();
+        cv::medianBlur(test_image, opencv_filtered, 2 * r + 1);
+        time_t finish = clock();
+        timer = static_cast<long double>(finish - start) / CLOCKS_PER_SEC;
+        std::cout << timer << " ";
+      }
+      break;
+    }
+    case 'n': {
+      std::cout << "Times for naive median filter with assortment:" << std::endl;
+      for (int r = 1; r < 100; ++r) {
+        naive_filter(test_image, 2 * r + 1, &timer);
+        std::cout << timer << " ";
+      }
+      break;
+    }
+    case 'h': {
+      std::cout << "Times for Huang median filter:" << std::endl;
+      for (int r = 1; r < 100; ++r) {
+        huang_filter(test_image, 2 * r + 1, &timer);
+        std::cout << timer << " ";
+      }
+      break;
+    }
+    case 'p': {
+      std::cout << "Times for Perrault median filter that claimed to be O(1):" << std::endl;
+      for (int r = 1; r < 100; ++r) {
+        perrault_filter(test_image, 2 * r + 1, &timer);
+        std::cout << timer << " ";
+      }
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+bool check_file(const cv::Mat& get_image){
+  /*
+   * Проверяем, что дали изображение формата CV_8UC1.
+   */
+  if(get_image.channels() != 1){
+    std::cout << "Wrong number of channels. Should be 3." << std::endl;
+    return false;
+  }
+  if(get_image.type() != 0){
+    std::cout << "Wrong pixel values. Should be from 0 to 255." << std::endl;
+    return false;
+  }
+  return true;
+}
+
 int main() {
   std::string input_path = "../images/trees.jpg";
-  cv::Mat origin = cv::imread(input_path, cv::IMREAD_GRAYSCALE);
-  if(origin.empty())
+  cv::Mat original_image = cv::imread(input_path, cv::IMREAD_GRAYSCALE);
+  if(original_image.empty())
   {
     std::cout << "Could not read the image: " << input_path << std::endl;
     return 1;
   }
+  cv::Size sz = original_image.size();
 
-  std::cout << "channels = " << origin.channels() << std::endl;
-  std::cout << "type = " << origin.type() << std::endl;
+  /*cv::Mat opencv_filtered = cv::Mat(sz.height, sz.width, CV_8UC1);
+  time_t start = clock();
+  cv::medianBlur(original_image, opencv_filtered, 101);
+  time_t finish = clock();
+  long double time_blur = static_cast<long double>(finish - start) / CLOCKS_PER_SEC;
 
-  cv::Size sz = origin.size();
+  long double time_naive;
+  cv::Mat naive_filtered = naive_filter(original_image, 50, &time_naive);
 
-  cv::Mat opencv_filtered = cv::Mat(sz.height, sz.width, CV_8UC1);
-  cv::medianBlur(origin, opencv_filtered, 5);
+  long double time_huang;
+  cv::Mat huang_filtered = huang_filter(original_image, 50, &time_huang);
 
-  cv::Mat naive_filtered = naive_filter(origin, 2);
-  cv::Mat huang_filtered = huang_filter(origin, 2);
-  cv::Mat perrault_filtered = perrault_filter(origin, 2);
+  long double time_perrault;
+  cv::Mat perrault_filtered = perrault_filter(original_image, 50, &time_perrault);
 
   cv::namedWindow("origin image", cv::WINDOW_NORMAL); // cv::WINDOW_AUTOSIZE
   imshow("origin image", origin);
@@ -449,32 +608,14 @@ int main() {
   cv::namedWindow("opencv filtered image", cv::WINDOW_NORMAL); // cv::WINDOW_AUTOSIZE
   imshow("opencv filtered image", opencv_filtered);
 
-  cv::waitKey(0);
+  std::cout << "time blur = " << time_blur << std::endl;
+  std::cout << "time naive = " << time_naive << std::endl;
+  std::cout << "time huang = " << time_huang <<std::endl;
+  std::cout << "time perrault = " << time_perrault << std::endl;
 
-  uint8_t* naive_pixel = reinterpret_cast<uint8_t*>(naive_filtered.data);
-  uint8_t* huang_pixel = reinterpret_cast<uint8_t*>(huang_filtered.data);
-  uint8_t* perrault_pixel = reinterpret_cast<uint8_t*>(perrault_filtered.data);
-  uint8_t* opencv_pixel = reinterpret_cast<uint8_t*>(opencv_filtered.data);
-  int n = sz.height;
-  int m = sz.width;
-  for(int i = 0; i < n; ++i){
-    for(int j = 0; j < m; ++j){
-      if(huang_pixel[i * m + j] != naive_pixel[i * m + j]){
-        std::cout << "ALERT in huang with naive, i = " << i << ", j = " << j << std::endl;
-        std::cout << "huang value = " << static_cast<int>(huang_pixel[i * m + j]) << std::endl;
-        std::cout << "naive value = " << static_cast<int>(naive_pixel[i * m + j]) << std::endl;
-      }
-      if(perrault_pixel[i * m + j] != naive_pixel[i * m + j]){
-        std::cout << "ALERT in perrault with naive i = " << i << ", j = " << j << std::endl;
-        std::cout << "perrault value = " << static_cast<int>(huang_pixel[i * m + j]) << std::endl;
-        std::cout << "naive value = " << static_cast<int>(naive_pixel[i * m + j]) << std::endl;
-      }
-      if(naive_pixel[i * m + j] != opencv_pixel[i * m + j]){
-        std::cout << "ALERT in naive with opencv, i = " << i << ", j = " << j << std::endl;
-        std::cout << "perrault value = " << static_cast<int>(naive_pixel[i * m + j]) << std::endl;
-        std::cout << "opencv value = " << static_cast<int>(opencv_pixel[i * m + j]) << std::endl;
-      }
-    }
-  }
+  cv::waitKey(0);*/
+
+  check_similarity(original_image, 3);
+  time_register(original_image, 'c');
   return 0;
 }
