@@ -85,7 +85,7 @@ uint8_t red_for_blue(const int bul, const int bur, const int b, const int bdl, c
 
 uint8_t* get_borders(const uint8_t* origin_pixels, const int n, const int m, const int channels){
   /*
-   * Отражаем края, так, чтобы сохранялась сетка фильтра Байера. Для этого надодобавить по 2 строки и 2 столбца
+   * Отражаем края, так, чтобы сохранялась сетка фильтра Байера. Для этого надо добавить по 2 строки и 2 столбца
    * с каждой стороны.
   */
 
@@ -176,7 +176,7 @@ uint8_t* get_borders(const uint8_t* origin_pixels, const int n, const int m, con
   new_pixels[channels * (1 * new_m + (new_m - 2)) + 1] = new_pixels[channels * (1 * new_m + (new_m - 4)) + 1];
   new_pixels[channels * (1 * new_m + (new_m - 2)) + 2] = new_pixels[channels * (1 * new_m + (new_m - 4)) + 2];
 
-  // левый нижниий квадрат
+  // левый нижний квадрат
   new_pixels[channels * ((new_n - 1) * new_m + 0)] = new_pixels[channels * ((new_n - 1) * new_m + 4)];
   new_pixels[channels * ((new_n - 1) * new_m + 0) + 1] = new_pixels[channels * ((new_n - 1) * new_m + 4) + 1];
   new_pixels[channels * ((new_n - 1) * new_m + 0) + 2] = new_pixels[channels * ((new_n - 1) * new_m + 4) + 2];

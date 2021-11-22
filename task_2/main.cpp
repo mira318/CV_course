@@ -534,7 +534,7 @@ void time_register(cv::Mat& test_image, char way){
         cv::medianBlur(test_image, opencv_filtered, 2 * r + 1);
         time_t finish = clock();
         timer = static_cast<long double>(finish - start) / CLOCKS_PER_SEC;
-        std::cout << timer << " ";
+        std::cout << timer << ", ";
         fflush(stdout);
       }
       break;
@@ -544,7 +544,7 @@ void time_register(cv::Mat& test_image, char way){
       std::cout << "Times for naive median filter with assortment:" << std::endl;
       for (int r = 1; r < 100; ++r) {
         res = naive_filter(test_image, 2 * r + 1, &timer);
-        std::cout << timer << " ";
+        std::cout << timer << ", ";
         fflush(stdout);
       }
       break;
@@ -554,7 +554,7 @@ void time_register(cv::Mat& test_image, char way){
       std::cout << "Times for Huang median filter:" << std::endl;
       for (int r = 1; r < 100; ++r) {
         huang_filter(test_image, 2 * r + 1, &timer);
-        std::cout << timer << " ";
+        std::cout << timer << ", ";
         fflush(stdout);
       }
       break;
@@ -564,7 +564,7 @@ void time_register(cv::Mat& test_image, char way){
       std::cout << "Times for Perrault median filter that claimed to be O(1):" << std::endl;
       for (int r = 1; r < 100; ++r) {
         perreault_filter(test_image, 2 * r + 1, &timer);
-        std::cout << timer << " ";
+        std::cout << timer << ", ";
         fflush(stdout);
       }
       break;
