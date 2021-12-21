@@ -181,8 +181,6 @@ cv::Mat visualize_fht(int* fht_res, int n, int m){
 }
 
 int main() {
-  // todo: убрать утечки памяти, они явно есть
-
   cv::Mat input_image = cv::imread("../images/1.jpg", cv::IMREAD_GRAYSCALE);
   cv::Size sz = input_image.size();
   int n = sz.height;
